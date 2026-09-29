@@ -6,12 +6,10 @@ on:
     - cron: '17 */6 * * *'
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: xmltv-release
   cancel-in-progress: false
 
 jobs:
@@ -24,7 +22,7 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest discover -s tests -v
 
-  build:
+  release:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -32,24 +30,25 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: actions/configure-pages@v5
       - name: Generate XMLTV
         env:
           PLAYLIST_URL: ${{ secrets.PLAYLIST_URL }}
         run: >-
           python src/generate_epg.py
+          --previous-url https://github.com/ussefom/mi-epg/releases/latest/download/movistar.xml.gz
           --previous-url https://ussefom.github.io/mi-epg/movistar.xml.gz
-          --output-dir public
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: public
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          --output-dir release-assets
+      - name: Validate release assets
+        run: >-
+          python src/validate_release.py release-assets
+          --require-channel TVE
+          --require-channel SEXTA
+          --require-channel MPLUS
+      - name: Publish immutable GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python src/publish_release.py
+          --assets-dir release-assets
+          --repository ${{ github.repository }}
+          --keep 5
